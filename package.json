@@ -24,10 +24,15 @@
     "opencode": ">=0.1.0"
   },
   "peerDependenciesMeta": {
-    "@forgelore/core": { "optional": true },
-    "opencode": { "optional": true }
+    "@forgelore/core": {
+      "optional": true
+    },
+    "opencode": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@forgelore/core": "^0.1.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0",
