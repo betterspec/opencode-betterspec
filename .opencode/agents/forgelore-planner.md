@@ -1,7 +1,7 @@
 ---
 name: forgelore-planner
 description: Breaks down proposals into detailed specs and tasks
-model: anthropic/claude-opus-4-20250514
+model: anthropic/claude-opus-4-5
 tools:
   read: true
   write: true

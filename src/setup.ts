@@ -1,34 +1,46 @@
 /**
  * opencode-forgelore setup
- * Run with: bunx opencode-forgelore
+ * Run with: bunx @forgelore/opencode
  *
  * This script:
- * 1. Adds "opencode-forgelore" to ~/.config/opencode/opencode.json plugin[]
+ * 1. Adds "@forgelore/opencode" to ~/.config/opencode/opencode.json plugin[]
  * 2. Installs @forgelore/cli globally
  * 3. Runs `forgelore init` in the current project (scaffolds specs + skill)
- * 4. Copies OpenCode-specific agent definitions to .opencode/agents/
+ * 4. Prompts for model selection per agent role (searchable autocomplete)
+ * 5. Copies agent definitions to .opencode/agents/ with selected models
  */
 
-import { readFile, writeFile, mkdir, copyFile, access } from "node:fs/promises";
+import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import * as p from "@clack/prompts";
+import chalk from "chalk";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
 
-// ─── Colors (minimal, no deps) ──────────────────────────────
+// ─── Theme ──────────────────────────────────────────────────
 
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
-const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
-const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
-const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
-const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
-const sedona = (s: string) => `\x1b[38;2;204;85;0m${s}\x1b[0m`;
+const sedona = chalk.hex("#CC5500");
+const accent = chalk.hex("#F5A050");
+const lore = chalk.hex("#7C3AED");
+const muted = chalk.hex("#6B7280");
 
-function log(icon: string, msg: string) {
-  console.log(`  ${icon} ${msg}`);
+function step(n: number, msg: string) {
+  p.log.step(sedona(`${n}.`) + " " + chalk.bold(msg));
+}
+
+function ok(msg: string) {
+  p.log.success(msg);
+}
+
+function warn(msg: string) {
+  p.log.warn(msg);
+}
+
+function fail(msg: string) {
+  p.log.error(msg);
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -40,19 +52,228 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+// ─── Agent Role Definitions ─────────────────────────────────
+
+interface AgentRole {
+  file: string;
+  name: string;
+  description: string;
+  recommendation: string;
+  defaultModel: string;
+}
+
+const AGENT_ROLES: AgentRole[] = [
+  {
+    file: "forgelore-planner.md",
+    name: "Planner",
+    description: "Breaks down proposals into detailed specs, requirements, and task plans.",
+    recommendation: "Best with strong reasoning models (opus-class or o1-class).",
+    defaultModel: "anthropic/claude-opus-4-20250514",
+  },
+  {
+    file: "forgelore-builder.md",
+    name: "Builder",
+    description: "Implements tasks from specs — writes code, runs tests, updates task status.",
+    recommendation: "Best with fast, capable coding models (sonnet-class).",
+    defaultModel: "anthropic/claude-sonnet-4-20250514",
+  },
+  {
+    file: "forgelore-validator.md",
+    name: "Validator",
+    description: "Independently verifies implementation against specs with clean context.",
+    recommendation: "Best with a different provider than builder for diverse review.",
+    defaultModel: "anthropic/claude-sonnet-4-20250514",
+  },
+  {
+    file: "forgelore-archivist.md",
+    name: "Archivist",
+    description: "Archives completed changes and extracts knowledge for future reference.",
+    recommendation: "Any capable model works — fast models preferred.",
+    defaultModel: "anthropic/claude-sonnet-4-20250514",
+  },
+];
+
+// ─── Model Discovery ────────────────────────────────────────
+
+async function queryAvailableModels(): Promise<string[]> {
+  try {
+    const output = execSync("opencode models", {
+      encoding: "utf-8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const models = output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && line.includes("/"));
+    return models.length > 0 ? models : [];
+  } catch {
+    return [];
+  }
+}
+
+// ─── Model Selection ────────────────────────────────────────
+
+function buildModelOptions(
+  availableModels: string[],
+  defaultModel: string
+): { value: string; label?: string; hint?: string }[] {
+  const options: { value: string; label?: string; hint?: string }[] = [];
+
+  // Put default first if it's in the list
+  if (availableModels.includes(defaultModel)) {
+    options.push({
+      value: defaultModel,
+      hint: "default",
+    });
+    for (const m of availableModels) {
+      if (m !== defaultModel) options.push({ value: m });
+    }
+  } else if (availableModels.length > 0) {
+    // Default not in available list — add it as first option anyway
+    options.push({
+      value: defaultModel,
+      hint: "default — may not be available",
+    });
+    for (const m of availableModels) {
+      options.push({ value: m });
+    }
+  } else {
+    // No models discovered — just show default
+    options.push({
+      value: defaultModel,
+      hint: "default",
+    });
+  }
+
+  return options;
+}
+
+async function promptForModels(
+  roles: AgentRole[],
+  availableModels: string[]
+): Promise<Map<string, string>> {
+  const selections = new Map<string, string>();
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+
+  if (!interactive) {
+    // Non-interactive: use all defaults silently (NFR-3)
+    for (const role of roles) {
+      selections.set(role.file, role.defaultModel);
+    }
+    return selections;
+  }
+
+  // Ask if user wants to customize or accept defaults (FR-5)
+  const customize = await p.confirm({
+    message: "Configure models for each agent role?",
+    initialValue: false,
+  });
+
+  if (p.isCancel(customize)) {
+    p.cancel("Setup cancelled.");
+    process.exit(0);
+  }
+
+  if (!customize) {
+    // Accept all defaults
+    for (const role of roles) {
+      selections.set(role.file, role.defaultModel);
+    }
+
+    p.note(
+      roles
+        .map((r) => `${sedona(r.name.padEnd(12))} ${muted(r.defaultModel)}`)
+        .join("\n"),
+      "Using default models"
+    );
+    return selections;
+  }
+
+  // Per-role autocomplete prompts (FR-1, FR-2, FR-3)
+  for (const role of roles) {
+    // Show role context before the prompt
+    p.note(
+      [
+        `${chalk.bold(role.description)}`,
+        "",
+        `${accent("Recommendation:")} ${role.recommendation}`,
+        `${muted("Default:")} ${role.defaultModel}`,
+      ].join("\n"),
+      `${sedona(role.name)} Agent`
+    );
+
+    const options = buildModelOptions(availableModels, role.defaultModel);
+
+    if (options.length > 1) {
+      // Searchable autocomplete with available models
+      const selected = await p.autocomplete({
+        message: `Model for ${sedona(role.name)}`,
+        options,
+        placeholder: "Type to search or enter a custom model ID",
+        initialValue: role.defaultModel,
+      });
+
+      if (p.isCancel(selected)) {
+        p.cancel("Setup cancelled.");
+        process.exit(0);
+      }
+
+      selections.set(role.file, selected);
+    } else {
+      // No model list — free text input with default
+      const selected = await p.text({
+        message: `Model for ${sedona(role.name)}`,
+        placeholder: role.defaultModel,
+        defaultValue: role.defaultModel,
+        validate: (val) => {
+          if (!val) return "Please enter a model ID";
+          if (!val.includes("/"))
+            return "Model ID should be in provider/model format (e.g. anthropic/claude-sonnet-4-20250514)";
+          return undefined;
+        },
+      });
+
+      if (p.isCancel(selected)) {
+        p.cancel("Setup cancelled.");
+        process.exit(0);
+      }
+
+      selections.set(role.file, selected);
+    }
+  }
+
+  // Summary
+  p.note(
+    roles
+      .map((r) => {
+        const chosen = selections.get(r.file)!;
+        const isDefault = chosen === r.defaultModel;
+        return `${sedona(r.name.padEnd(12))} ${isDefault ? muted(chosen) : chalk.cyan(chosen)}`;
+      })
+      .join("\n"),
+    "Selected models"
+  );
+
+  return selections;
+}
+
+// ─── Frontmatter Model Injection ────────────────────────────
+
+function injectModel(templateContent: string, model: string): string {
+  return templateContent.replace(/^(model:\s*).+$/m, `$1${model}`);
+}
+
 // ─── Main ────────────────────────────────────────────────────
 
 async function main() {
   const cwd = process.cwd();
 
-  console.log("");
-  console.log(sedona(bold("  forgelore")), dim("+ opencode"));
-  console.log(dim("  spec-driven development for AI-assisted teams"));
-  console.log("");
+  p.intro(`${sedona.bold("forgelore")} ${muted("+ opencode")}`);
 
   // ── Step 1: Add plugin to opencode.json ──────────────────
 
-  log("1.", bold("Adding plugin to OpenCode config..."));
+  step(1, "Adding plugin to OpenCode config");
 
   const opencodeConfigPath = resolve(
     process.env.HOME || "~",
@@ -76,95 +297,112 @@ async function main() {
     if (!config.plugin.includes(pluginName)) {
       config.plugin.push(pluginName);
       await writeFile(opencodeConfigPath, JSON.stringify(config, null, 2) + "\n");
-      log(green("✓"), `Added ${cyan(pluginName)} to ${dim(opencodeConfigPath)}`);
+      ok(`Added ${chalk.cyan(pluginName)} to config`);
     } else {
-      log(green("✓"), `${cyan(pluginName)} already in plugin list`);
+      ok(`${chalk.cyan(pluginName)} already in plugin list`);
     }
   } catch (err) {
-    log(red("✗"), `Failed to update OpenCode config: ${err}`);
-    log("", dim(`You can manually add "opencode-forgelore" to the plugin array in ${opencodeConfigPath}`));
+    fail(`Failed to update OpenCode config: ${err}`);
+    p.log.info(
+      muted(`Manually add "@forgelore/opencode" to plugin[] in ${opencodeConfigPath}`)
+    );
   }
 
   // ── Step 2: Install @forgelore/cli globally ──────────────
 
-  log("2.", bold("Installing @forgelore/cli..."));
+  step(2, "Installing @forgelore/cli");
 
   try {
     execSync("which forgelore", { stdio: "ignore" });
-    log(green("✓"), "forgelore CLI already installed");
+    ok("forgelore CLI already installed");
   } catch {
     try {
       execSync("bun i -g @forgelore/cli", { stdio: "inherit" });
-      log(green("✓"), "Installed @forgelore/cli globally");
+      ok("Installed @forgelore/cli globally");
     } catch {
-      log(yellow("!"), "Could not install @forgelore/cli globally");
-      log("", dim("Run manually: bun i -g @forgelore/cli"));
+      warn("Could not install @forgelore/cli globally");
+      p.log.info(muted("Run manually: bun i -g @forgelore/cli"));
     }
   }
 
   // ── Step 3: Run forgelore init ───────────────────────────
 
-  log("3.", bold("Initializing forgelore in project..."));
+  step(3, "Initializing forgelore in project");
 
   const forgeloreConfigPath = resolve(cwd, "forgelore/forgelore.json");
   if (await fileExists(forgeloreConfigPath)) {
-    log(green("✓"), "forgelore already initialized");
+    ok("forgelore already initialized");
   } else {
     try {
       execSync("forgelore init", { cwd, stdio: "inherit" });
-      log(green("✓"), "forgelore initialized");
+      ok("forgelore initialized");
     } catch {
-      log(yellow("!"), "forgelore init requires interactive input — run it manually");
-      log("", dim("Run: forgelore init"));
+      warn("forgelore init requires interactive input — run it manually");
+      p.log.info(muted("Run: forgelore init"));
     }
   }
 
-  // ── Step 4: Copy agents to .opencode/agents/ ────────────
+  // ── Step 4: Model selection ─────────────────────────────
 
-  log("4.", bold("Setting up OpenCode agents..."));
+  step(4, "Configuring agent models");
+
+  const s = p.spinner();
+  s.start("Querying available models");
+  const availableModels = await queryAvailableModels();
+  if (availableModels.length > 0) {
+    s.stop(`Found ${availableModels.length} available models`);
+  } else {
+    s.stop(muted("Could not query models — manual input available"));
+  }
+
+  const modelSelections = await promptForModels(AGENT_ROLES, availableModels);
+
+  // ── Step 5: Write agents with selected models ───────────
+
+  step(5, "Setting up OpenCode agents");
 
   const agentsSrc = join(packageRoot, "agents");
   const agentsDest = resolve(cwd, ".opencode/agents");
 
-  const agentFiles = [
-    "forgelore-builder.md",
-    "forgelore-validator.md",
-    "forgelore-planner.md",
-    "forgelore-archivist.md",
-  ];
-
   try {
     await mkdir(agentsDest, { recursive: true });
 
-    for (const file of agentFiles) {
-      const src = join(agentsSrc, file);
-      const dest = join(agentsDest, file);
+    for (const role of AGENT_ROLES) {
+      const src = join(agentsSrc, role.file);
+      const dest = join(agentsDest, role.file);
 
       if (await fileExists(src)) {
-        await copyFile(src, dest);
-        log(green("✓"), `${dim(".opencode/agents/")}${file}`);
+        const template = await readFile(src, "utf-8");
+        const selectedModel = modelSelections.get(role.file) ?? role.defaultModel;
+        const content = injectModel(template, selectedModel);
+        await writeFile(dest, content);
+        ok(`${muted(".opencode/agents/")}${role.file}`);
       } else {
-        log(yellow("!"), `Agent template not found: ${file}`);
+        warn(`Agent template not found: ${role.file}`);
       }
     }
   } catch (err) {
-    log(red("✗"), `Failed to copy agents: ${err}`);
-    log("", dim("You can copy them manually from the opencode-forgelore package"));
+    fail(`Failed to write agents: ${err}`);
+    p.log.info(muted("Copy agents manually from the @forgelore/opencode package"));
   }
 
   // ── Done ─────────────────────────────────────────────────
 
-  console.log("");
-  log(sedona("✓"), bold("Setup complete!"));
-  console.log("");
-  console.log(dim("  Next steps:"));
-  console.log(`    ${cyan("forgelore propose")} ${dim('"your idea"')}  — create a spec`);
-  console.log(`    ${cyan("forgelore status")}               — see project state`);
-  console.log(`    ${cyan("opencode")}                       — start coding with agents`);
-  console.log("");
+  p.note(
+    [
+      `${chalk.cyan("forgelore propose")} ${muted('"your idea"')}  ${muted("— create a spec")}`,
+      `${chalk.cyan("forgelore status")}               ${muted("— see project state")}`,
+      `${chalk.cyan("opencode")}                       ${muted("— start coding with agents")}`,
+      "",
+      muted("To change agent models later, edit .opencode/agents/*.md"),
+    ].join("\n"),
+    "Next steps"
+  );
+
+  p.outro(`${sedona.bold("Setup complete!")}`);
 }
 
 main().catch((err) => {
-  console.error(red("Setup failed:"), err);
+  p.cancel(`Setup failed: ${err}`);
   process.exit(1);
 });

@@ -1,7 +1,7 @@
 ---
 name: forgelore-validator
 description: Validates implementation against specs with clean context
-model: openai/codex
+model: kimi-for-coding/k2p5
 tools:
   read: true
   glob: true

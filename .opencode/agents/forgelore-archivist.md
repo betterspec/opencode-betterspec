@@ -1,7 +1,7 @@
 ---
 name: forgelore-archivist
 description: Archives changes and extracts knowledge
-model: anthropic/claude-sonnet-4-20250514
+model: kimi-for-coding/k2p5
 tools:
   read: true
   write: true

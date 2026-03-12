@@ -1,7 +1,7 @@
 ---
 name: forgelore-builder
 description: Implements tasks from forgelore specs
-model: anthropic/claude-sonnet-4-20250514
+model: anthropic/claude-sonnet-4-5
 tools:
   read: true
   write: true

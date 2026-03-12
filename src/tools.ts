@@ -7,12 +7,33 @@
 
 import { tool, type ToolDefinition } from "@opencode-ai/plugin/tool";
 import type { PluginInput } from "@opencode-ai/plugin";
+import { readFile } from "node:fs/promises";
+import { resolve, join } from "node:path";
 import {
   configExists,
   listChanges,
   readConfig,
   summarizeTasks,
 } from "@forgelore/core";
+
+/**
+ * Read the model from an agent's YAML frontmatter on disk.
+ * Falls back to the provided default if the file doesn't exist or can't be parsed.
+ */
+async function readModelFromAgent(
+  directory: string,
+  agentFile: string,
+  fallback: string
+): Promise<string> {
+  try {
+    const agentPath = resolve(directory, ".opencode/agents", agentFile);
+    const content = await readFile(agentPath, "utf-8");
+    const match = content.match(/^model:\s*(.+)$/m);
+    return match?.[1]?.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export function createTools(ctx: PluginInput): Record<string, ToolDefinition> {
   const { $ } = ctx;
@@ -114,7 +135,12 @@ export function createTools(ctx: PluginInput): Record<string, ToolDefinition> {
         .describe("Override model for builder (default: anthropic/claude-sonnet-4-20250514)"),
     },
     async execute(args, toolCtx) {
-      const model = args.model ?? "anthropic/claude-sonnet-4-20250514";
+      const agentModel = await readModelFromAgent(
+        toolCtx.directory,
+        "forgelore-builder.md",
+        "anthropic/claude-sonnet-4-20250514"
+      );
+      const model = args.model ?? agentModel;
       const taskFilter = args.taskIds
         ? `Tasks to complete: ${args.taskIds}`
         : "Complete all pending tasks.";
@@ -165,7 +191,12 @@ export function createTools(ctx: PluginInput): Record<string, ToolDefinition> {
         .describe("Override model for validator (default: anthropic/claude-sonnet-4-20250514)"),
     },
     async execute(args, toolCtx) {
-      const model = args.model ?? "anthropic/claude-sonnet-4-20250514";
+      const agentModel = await readModelFromAgent(
+        toolCtx.directory,
+        "forgelore-validator.md",
+        "anthropic/claude-sonnet-4-20250514"
+      );
+      const model = args.model ?? agentModel;
 
       const prompt = [
         "You are a VALIDATION AGENT. You have NOT seen the build process.",
