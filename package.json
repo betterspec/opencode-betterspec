@@ -23,7 +23,7 @@
   "files": ["dist", "agents", "skills"],
   "license": "MIT",
   "peerDependencies": {
-    "@betterspec/core": ">=0.2.0"
+    "@betterspec/core": ">=0.3.0"
   },
   "peerDependenciesMeta": {
     "@betterspec/core": {
@@ -31,7 +31,7 @@
     }
   },
   "devDependencies": {
-    "@betterspec/core": "^0.2.3",
+    "@betterspec/core": "^0.3.0",
     "@opencode-ai/plugin": "^1.2.24",
     "@types/node": "^22.0.0",
     "tsup": "^8.4.0",

@@ -9,7 +9,7 @@
         "chalk": "^5.6.2",
       },
       "devDependencies": {
-        "@betterspec/core": "^0.2.3",
+        "@betterspec/core": "^0.3.0",
         "@opencode-ai/plugin": "^1.2.24",
         "@types/node": "^22.0.0",
         "tsup": "^8.4.0",
@@ -17,7 +17,7 @@
         "vitest": "^3.1.0",
       },
       "peerDependencies": {
-        "@betterspec/core": ">=0.2.0",
+        "@betterspec/core": ">=0.3.0",
       },
       "optionalPeers": [
         "@betterspec/core",
@@ -25,6 +25,8 @@
     },
   },
   "packages": {
+    "@betterspec/core": ["@betterspec/core@0.3.0", "", {}, "sha512-8oU+SA5ZEkUUqTPG5iBe5Juc7qjtHkjkrAPRB973vOdgjSYjbnlnyOLo0HrD2dwfgMlcsBbbL7zN+T79yNKd7g=="],
+
     "@clack/core": ["@clack/core@1.1.0", "", { "dependencies": { "sisteransi": "^1.0.5" } }, "sha512-SVcm4Dqm2ukn64/8Gub2wnlA5nS2iWJyCkdNHcvNHPIeBTGojpdJ+9cZKwLfmqy7irD4N5qLteSilJlE0WLAtA=="],
 
     "@clack/prompts": ["@clack/prompts@1.1.0", "", { "dependencies": { "@clack/core": "1.1.0", "sisteransi": "^1.0.5" } }, "sha512-pkqbPGtohJAvm4Dphs2M8xE29ggupihHdy1x84HNojZuMtFsHiUlRvqD24tM2+XmI+61LlfNceM3Wr7U5QES5g=="],
@@ -80,8 +82,6 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.27.3", "", { "os": "win32", "cpu": "ia32" }, "sha512-QLKSFeXNS8+tHW7tZpMtjlNb7HKau0QDpwm49u0vUp9y1WOF+PEzkU84y9GqYaAVW8aH8f3GcBck26jh54cX4Q=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.3", "", { "os": "win32", "cpu": "x64" }, "sha512-4uJGhsxuptu3OcpVAzli+/gWusVGwZZHTlS63hh++ehExkVT8SgiEf7/uC/PclrPPkLhZqGgCTjd0VWLo6xMqA=="],
-
-    "@betterspec/core": ["@betterspec/core@0.2.3", "", {}, "sha512-n/Fb8/q6EdZSio3/BxtX8Z3vnlwxDqGw8rO88b0nsNBvdeLd6PGgkdA5PFytg5Hwy1E38Ye8Z4I7CfyoWX7ILQ=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
